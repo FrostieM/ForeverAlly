@@ -1,0 +1,4 @@
+package-as: ForeverAlly
+ignore:
+  - media
+
