@@ -3,7 +3,7 @@
 ## Notes: Marks players you grouped with and shows which of your class buffs each nearby player lacks, on their nameplates; one key buffs them one by one (self, group, then everyone around).
 ## Notes-ruRU: Отмечает игроков, с которыми ты был в группе, и показывает на их табличках, каких твоих баффов не хватает; одна клавиша баффает всех по очереди (себя, группу, потом всех вокруг).
 ## Author: Osino
-## Version: 1.0.0
+## Version: 1.0.1
 ## Category: Buffs
 ## IconTexture: Interface\Icons\Spell_Holy_GreaterBlessingofKings
 ## SavedVariables: ForeverAllyDB

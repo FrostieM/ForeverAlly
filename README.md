@@ -33,7 +33,7 @@ A buff with less than 30% of its time left counts as missing, so you can renew i
 Press a key, and the next player who needs a buff gets it: you first, then your group, then everyone around. It is one cast per key press, out of combat only. You press the key every time, so it is not a bot.
 
 - **Right rank for the level.** Forever doesn't pick the rank by itself, so the addon does, and low-level players don't get "target too low level".
-- **Smart blessings.** For paladins it picks the best blessing each player can still get and takes other paladins' blessings into account. You set the order separately for mana users and for rage and energy users. Tanks get no Salvation by default.
+- **Smart blessings.** For paladins it picks the best blessing each player can still get and takes other paladins' blessings into account. You set the order separately for mana users, for rage and energy users, and for yourself (Kings first by default). Tanks get no Salvation by default.
 - **Never stuck.** Someone out of sight goes to the back of the queue for a few seconds.
 
 ## Install

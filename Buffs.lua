@@ -154,7 +154,9 @@ local function BestBlessing(unit, present, mine, low)
         return
     end
     local power = Plain(UnitPowerType(unit))
-    local order = (power == 0) and ns.db.blessings.mana or ns.db.blessings.physical
+    -- yourself: your own order (a paladin is on mana, but a Retribution one fights like a warrior)
+    local order = Plain(UnitIsUnit(unit, "player")) and ns.db.blessings.self
+        or (power == 0) and ns.db.blessings.mana or ns.db.blessings.physical
     for _, kind in ipairs(order) do
         local b = blessings[kind]
         local rageSalv = kind == "salvation" and power == 1 and ns.db.blessings.noSalvationForRage

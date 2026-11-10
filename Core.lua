@@ -28,6 +28,7 @@ local DEFAULTS = {
         optIn = {},                -- optional buffs switched on (they start off)
         thornsTanksOnly = true },
     blessings = {
+        self = { "kings", "might", "wisdom", "salvation", "light", "sanctuary" }, -- on yourself
         mana = { "wisdom", "kings", "salvation", "might", "light", "sanctuary" },
         physical = { "might", "kings", "salvation", "light", "sanctuary", "wisdom" },
         noSalvationForRage = true,
@@ -65,6 +66,7 @@ local function LoadDB()
     if type(ForeverAllyDB) ~= "table" then ForeverAllyDB = {} end
     local db = ForeverAllyDB
     Fill(db, DEFAULTS)
+    OrderComplete(db.blessings.self, DEFAULTS.blessings.self)
     OrderComplete(db.blessings.mana, DEFAULTS.blessings.mana)
     OrderComplete(db.blessings.physical, DEFAULTS.blessings.physical)
     -- the two addons this one replaces: their ally memory comes along

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.1
+
+- Paladin: a separate blessing order for yourself, Kings first by default (then Might, Wisdom). Before, you got the mana users' order (Wisdom first), since a paladin is on mana, which is wrong for a Retribution paladin. Other players keep the mana / rage and energy orders. Set it in `/fally` > Paladin blessings > Blessing order for yourself.
+
 ## 1.0.0
 
 First release. Buffs: Priest Fortitude, Divine Spirit; Druid Mark of the Wild; Mage Arcane Intellect; Paladin blessings; optional (off by default): Shadow Protection, Thorns (tanks only by default), Unending Breath, Detect Invisibility. It merges two private addons, Forever Recent Ally Mark and Forever Buff Mark. The client behaviour below was found in game on WoW: Forever (1.60.1), and the addon is built around it:

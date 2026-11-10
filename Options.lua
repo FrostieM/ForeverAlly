@@ -337,6 +337,7 @@ local function Build(panel)
         y = y - 6
         y = Header(c, y, L["Paladin blessings"])
         y = Note(c, y, L["Each paladin keeps one blessing of their own on a player: the first one in the list that the player lacks is given."])
+        y = OrderList(c, y, L["Blessing order for yourself"], db.blessings.self)
         y = OrderList(c, y, L["Blessing order for mana users"], db.blessings.mana)
         y = OrderList(c, y, L["Blessing order for rage and energy users"], db.blessings.physical)
         y = Check(c, y, L["No Salvation for rage users (tanks)"], nil,
