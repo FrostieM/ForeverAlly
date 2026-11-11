@@ -8,7 +8,7 @@
 --  * Forever does not say who cast an aura on another player (sourceUnit is empty), so the
 --    blessings you cast with the auto-buff macro are remembered (ns.myBlessings, 5 minutes).
 --  * Shown only out of combat; not for dead / offline / unassistable players, nor PvP-flagged ones
---    while you are not flagged (option). Auras that come back secret: no icon rather than a wrong one.
+--    outside your group while you are not flagged (option). Auras that come back secret: no icon rather than a wrong one.
 local _, ns = ...
 local L, Plain = ns.L, ns.Plain
 
@@ -130,6 +130,26 @@ end
 
 local BLESSING_TIME = 300
 ns.myBlessings = {} -- guid -> { name, untilT }
+
+-- "A more powerful spell is already active": someone else's stronger rank of that buff is on the
+-- player (running low, so it looked missing). It can't be overwritten: for a while that buff is
+-- not offered to them, and a blessing moves on to the next kind in the order.
+local BOUNCE_TIME = 120
+ns.bounced = {} -- guid -> { [spell name] = untilT }
+function ns.Bounce(guid, spell, secs)
+    local now = GetTime()
+    for g, t in pairs(ns.bounced) do
+        local any
+        for n, u in pairs(t) do if u <= now then t[n] = nil else any = true end end
+        if not any then ns.bounced[g] = nil end
+    end
+    ns.bounced[guid] = ns.bounced[guid] or {}
+    ns.bounced[guid][spell] = now + (secs or BOUNCE_TIME)
+end
+local function Bounced(guid, spell)
+    local t = guid and ns.bounced[guid]
+    return t and spell and (t[spell] or 0) > GetTime() or false
+end
 function ns.RememberBlessing(guid, name)
     local now = GetTime()
     for g, r in pairs(ns.myBlessings) do if r.untilT <= now then ns.myBlessings[g] = nil end end
@@ -146,7 +166,7 @@ local function BestBlessing(unit, present, mine, low)
             return
         end
     end
-    local guid = Plain(UnitGUID(unit))
+    local guid = ns.UnitKey(unit)
     local rec = guid and ns.myBlessings[guid]
     if rec and present[rec.name] and (rec.untilT > GetTime() or low[rec.name]) then
         local kind = blessingNames[rec.name]
@@ -161,19 +181,89 @@ local function BestBlessing(unit, present, mine, low)
         local b = blessings[kind]
         local rageSalv = kind == "salvation" and power == 1 and ns.db.blessings.noSalvationForRage
         -- another paladin's blessing that is running out counts as missing too
-        if b and not off[kind] and not rageSalv and Missing(present, b.names, low) then return b end
+        if b and not off[kind] and not rageSalv and not Bounced(guid, b.spell) and Missing(present, b.names, low) then return b end
     end
 end
 
--- the buffs this unit lacks: { buff, ... } (class buffs, then the blessing), nil when unreadable
+-- Blind mode. In a battleground the client hides every player's buffs from addons (yours too), so
+-- for you and your group the addon goes by its own casts instead: what it cast on whom and when
+-- (any cast that landed). A buff is given again when, by that clock, it is running low (renewPct),
+-- or once the player was seen dead. Someone else's buff on them is not known: a cast that bounces
+-- ("a more powerful spell") moves on as usual.
+local BLIND_TIME = { -- seconds a buff lasts, by its key (rank 1 id); blessings: BLESSING_TIME
+    [1243] = 1800, [14752] = 1800, [976] = 600, [1126] = 1800, [467] = 600, [1459] = 1800,
+    [5697] = 600, [11743] = 600,
+}
+ns.casts = {} -- key (GUID, or "unit:raidN" when hidden) -> { [spell name] = time cast }
+function ns.RememberCast(key, name)
+    if not (key and name) then return end
+    ns.casts[key] = ns.casts[key] or {}
+    ns.casts[key][name] = GetTime()
+end
+-- dead (buffs gone), or the group changed (a hidden-GUID key is a raid slot, which may now be someone else)
+function ns.ForgetCasts(key)
+    if key then ns.casts[key] = nil; ns.myBlessings[key] = nil end
+end
+function ns.ForgetSlotCasts()
+    for key in pairs(ns.casts) do if key:find("^unit:") then ns.casts[key] = nil end end
+    for key in pairs(ns.myBlessings) do if key:find("^unit:") then ns.myBlessings[key] = nil end end
+end
+local function BlindLow(key, name, dur)
+    local t = ns.casts[key] and ns.casts[key][name]
+    if not t then return true end
+    return GetTime() - t > dur * (1 - (ns.db.buffs.renewPct or 30) / 100)
+end
+
+local function BlindNeeds(unit, key)
+    local _, class = UnitClass(unit)
+    class = Plain(class)
+    local power = Plain(UnitPowerType(unit))
+    local list, off, manaOnly = {}, ns.db.buffs.off, ns.db.buffs.manaOnly
+    local optIn, tanksOnly = ns.db.buffs.optIn, ns.db.buffs.thornsTanksOnly
+    for _, buff in ipairs(active) do
+        local forClass = not (buff.manaOnly and manaOnly) or (class and MANA_USERS[class]) or (not class and power == 0)
+        local wanted = (buff.optional and optIn[buff.key]) or (not buff.optional and not off[buff.key])
+        if wanted and buff.tankOnly and tanksOnly then wanted = power == 1 end
+        if wanted and forClass and not Bounced(key, buff.spell) and BlindLow(key, buff.spell, BLIND_TIME[buff.key] or 1800) then
+            list[#list + 1] = buff
+        end
+    end
+    if next(blessings) then
+        local rec = ns.myBlessings[key]
+        local kind = rec and rec.untilT > GetTime() and blessingNames[rec.name]
+        if kind then
+            -- ours is on them: the same one again when it is running low
+            if not off[kind] and blessings[kind] and not Bounced(key, rec.name)
+                and BlindLow(key, rec.name, BLESSING_TIME) then list[#list + 1] = blessings[kind] end
+        else
+            local order = Plain(UnitIsUnit(unit, "player")) and ns.db.blessings.self
+                or (power == 0) and ns.db.blessings.mana or ns.db.blessings.physical
+            for _, k in ipairs(order) do
+                local b = blessings[k]
+                local rageSalv = k == "salvation" and power == 1 and ns.db.blessings.noSalvationForRage
+                if b and not off[k] and not rageSalv and not Bounced(key, b.spell) then list[#list + 1] = b break end
+            end
+        end
+    end
+    return list
+end
+
+-- the buffs this unit lacks: { buff, ... } (class buffs, then the blessing), nil when unreadable;
+-- for you and your group, when unreadable, by the addon's own casts (blind: second value true)
 function ns.Needs(unit)
     local present, mine, low = Scan(unit)
-    if not present then return end
+    if not present then
+        if unit ~= "player" and not ns.GroupToken(unit) then return end
+        local key = ns.UnitKey(unit)
+        if not key then return end
+        return BlindNeeds(unit, key), true
+    end
     local _, class = UnitClass(unit)
     class = Plain(class)
     local list, off, manaOnly = {}, ns.db.buffs.off, ns.db.buffs.manaOnly
     local optIn, tanksOnly = ns.db.buffs.optIn, ns.db.buffs.thornsTanksOnly
     local power
+    local guid = ns.UnitKey(unit)
     for _, buff in ipairs(active) do
         local forClass = not (buff.manaOnly and manaOnly) or (class and MANA_USERS[class])
         local wanted = (buff.optional and optIn[buff.key]) or (not buff.optional and not off[buff.key])
@@ -181,18 +271,78 @@ function ns.Needs(unit)
             power = power or Plain(UnitPowerType(unit))
             wanted = power == 1
         end
-        if wanted and forClass and Missing(present, buff.names, low) then list[#list + 1] = buff end
+        if wanted and forClass and not Bounced(guid, buff.spell) and Missing(present, buff.names, low) then list[#list + 1] = buff end
     end
     if next(blessings) then list[#list + 1] = BestBlessing(unit, present, mine, low) end
     return list
 end
 
+-- for the debug log: why this buff: class, which blessing order, and the buffs of yours (any caster)
+-- already on the player ("low" = under the renew share, counts as missing)
+function ns.Describe(unit)
+    local _, class = UnitClass(unit)
+    local power = Plain(UnitPowerType(unit))
+    local order = Plain(UnitIsUnit(unit, "player")) and "self" or (power == 0) and "mana" or "physical"
+    local ours = {}
+    for _, b in ipairs(active) do for _, n in ipairs(b.names) do ours[n] = true end end
+    local present, _, low = Scan(unit)
+    local has = {}
+    if present then
+        for n in pairs(present) do
+            if ours[n] or blessingNames[n] then has[#has + 1] = n .. (low[n] and " (low)" or "") end
+        end
+        table.sort(has)
+    end
+    local guid = ns.UnitKey(unit)
+    local rec = guid and ns.myBlessings[guid]
+    local extra = (rec and rec.untilT > GetTime()) and ("; mine: " .. rec.name) or ""
+    local b = guid and ns.bounced[guid]
+    if b then
+        local now, list = GetTime(), {}
+        for n, u in pairs(b) do if u > now then list[#list + 1] = n end end
+        if #list > 0 then extra = extra .. "; stronger on them: " .. table.concat(list, ", ") end
+    end
+    if not present and guid and ns.casts[guid] then
+        local now, list = GetTime(), {}
+        for n, t in pairs(ns.casts[guid]) do list[#list + 1] = ("%s %ds ago"):format(n, math.floor(now - t)) end
+        table.sort(list)
+        extra = extra .. "; cast by you: " .. table.concat(list, ", ")
+    end
+    return ("%s, %s order; has: %s%s"):format(Plain(class) or "?", order,
+        present and (#has > 0 and table.concat(has, ", ") or "none") or "hidden (blind: by your casts)", extra)
+end
+
+-- a value the client hides from addons (battlegrounds and other restricted places)
+local function Secret(v) return v ~= nil and issecretvalue and issecretvalue(v) or false end
+ns.Secret = Secret
+local function GroupToken(unit) return unit:find("^party%d") or unit:find("^raid%d") end
+ns.GroupToken = GroupToken
+
+-- the key a player is remembered by: the GUID, or for a group member whose GUID is hidden, the unit
+function ns.UnitKey(unit)
+    local guid = Plain(UnitGUID(unit))
+    if guid then return guid end
+    if GroupToken(unit) then return "unit:" .. unit end
+end
+
+-- true, or nil and why not. A party / raid member is not ruled out by a check the client answers
+-- with a hidden value (the cast itself carries help,nodead).
 function ns.Wanted(unit, allowSelf)
-    if not Plain(UnitIsPlayer(unit)) then return end
-    if Plain(UnitIsUnit(unit, "player")) and not allowSelf then return end
-    if not Plain(UnitCanAssist("player", unit)) then return end
-    if Plain(UnitIsDeadOrGhost(unit)) or Plain(UnitIsConnected(unit)) == false then return end
-    if ns.db.buffs.skipPvP and Plain(UnitIsPVP(unit)) and not Plain(UnitIsPVP("player")) then return end
+    local group = GroupToken(unit)
+    local isPlayer = UnitIsPlayer(unit)
+    if not Plain(isPlayer) and not (group and Secret(isPlayer)) then
+        return nil, Secret(isPlayer) and "player? hidden" or "not a player"
+    end
+    if Plain(UnitIsUnit(unit, "player")) and not allowSelf then return nil, "you" end
+    local assist = UnitCanAssist("player", unit)
+    if not Plain(assist) and not (group and Secret(assist)) then
+        return nil, Secret(assist) and "can assist? hidden" or "can't assist"
+    end
+    if Plain(UnitIsDeadOrGhost(unit)) then return nil, "dead" end
+    if Plain(UnitIsConnected(unit)) == false then return nil, "offline" end
+    -- (your group is buffed anyway: you are with them, and it is what you want)
+    if ns.db.buffs.skipPvP and Plain(UnitIsPVP(unit)) and not Plain(UnitIsPVP("player"))
+        and not (group or Plain(UnitInParty(unit)) or Plain(UnitInRaid(unit))) then return nil, "PvP-flagged" end
     return true
 end
 
@@ -237,7 +387,8 @@ end
 
 table.insert(ns.parts, { Update = Update, Hide = Hide })
 
-ns.On("PLAYER_ENTERING_WORLD", function() ns.BuildActive(); ns.RefreshAll() end)
+ns.On("PLAYER_ENTERING_WORLD", function() ns.ForgetSlotCasts(); ns.BuildActive(); ns.RefreshAll() end)
+ns.On("GROUP_ROSTER_UPDATE", function() ns.ForgetSlotCasts() end)
 ns.On("SPELLS_CHANGED", function() ns.BuildActive(); ns.RefreshAll() end)
 ns.On("PLAYER_REGEN_DISABLED", function() ns.RefreshAll() end)
 ns.On("PLAYER_REGEN_ENABLED", function() ns.RefreshAll() end)

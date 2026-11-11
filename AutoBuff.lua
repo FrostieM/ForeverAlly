@@ -36,7 +36,11 @@ end
 ns.InRange = InRange
 
 local skipUntil = {}
-local lastGUID, lastPress = nil, 0
+-- a buff that has just landed: its aura reaches the unit a moment after "cast ok", and until then the
+-- player still looks unbuffed. Without this the next press cast the same buff on them again.
+local justCast = {} -- guid -> { spell = name, t = GetTime() }
+local JUST_CAST_SEC = 3
+local lastGUID, lastPress, lastText = nil, 0, nil
 local casts, lastCast, lastFailed, lastFailedT = {}, nil, nil, 0
 local pressCount, sentSincePress = 0, false
 local NOT_A_TARGET_PROBLEM = {}
@@ -50,18 +54,37 @@ local stats
 local function Pick()
     local a = ns.db.auto
     local seen, now = {}, GetTime()
-    stats = { players = 0, need = 0, far = 0, skipped = 0, unreadable = 0 }
+    stats = { players = 0, need = 0, far = 0, skipped = 0, unreadable = 0, why = {} }
     local laterUnit, laterNeed
+    -- (for the log: why a group member got nothing)
+    local function note(unit, why)
+        if unit == "player" or ns.GroupToken(unit) then
+            stats.why[#stats.why + 1] = ("%s %s: %s"):format(unit, Plain((UnitName(unit))) or "?", why)
+        end
+    end
     local function try(unit)
-        if not Plain(UnitExists(unit)) then return end
-        local guid = Plain(UnitGUID(unit))
-        if not guid or seen[guid] then return end
+        local exists = UnitExists(unit)
+        if not Plain(exists) and not (ns.GroupToken(unit) and ns.Secret(exists)) then return end
+        local guid = ns.UnitKey(unit)
+        if not guid then note(unit, ns.Secret(UnitGUID(unit)) and "GUID hidden" or "no GUID") return end
+        if seen[guid] then return end
         seen[guid] = true
-        if not ns.Wanted(unit, true) then return end
+        local ok, why = ns.Wanted(unit, true)
+        if not ok then
+            if why == "dead" then ns.ForgetCasts(guid) end -- (their buffs are gone)
+            note(unit, why or "?") return
+        end
         stats.players = stats.players + 1
-        local needs = ns.Needs(unit)
-        if not needs then stats.unreadable = stats.unreadable + 1 return end
-        if #needs == 0 then return end
+        local needs, blind = ns.Needs(unit)
+        if not needs then stats.unreadable = stats.unreadable + 1 note(unit, "buffs hidden") return end
+        if blind then stats.unreadable = stats.unreadable + 1 end
+        local jc = justCast[guid]
+        if jc and now - jc.t < JUST_CAST_SEC then
+            local rest = {}
+            for _, need in ipairs(needs) do if need.spell ~= jc.spell then rest[#rest + 1] = need end end
+            needs = rest
+        end
+        if #needs == 0 then note(unit, blind and "has all (by your casts)" or "has all") return end
         stats.need = stats.need + 1
         local later = (skipUntil[guid] or 0) > now
         local isSelf = Plain(UnitIsUnit(unit, "player"))
@@ -69,11 +92,13 @@ local function Pick()
             if isSelf or InRange(need, unit) then
                 if not later then return need end
                 stats.skipped = stats.skipped + 1
+                note(unit, "moved back")
                 if not laterUnit then laterUnit, laterNeed = unit, need end
                 return
             end
         end
         stats.far = stats.far + 1
+        note(unit, "out of range")
     end
     local units = {}
     if a.self then units[#units + 1] = "player" end
@@ -145,6 +170,7 @@ end
 
 local IDLE_BODY = "/click FAllyPress"
 local armed = {}
+local lastNobody -- the last "pick nobody" reasons logged (logged again only when they change)
 
 -- Key Bindings > AddOns > ForeverAlly: a secure button that runs macro text (type "macro",
 -- macrotext) set by the addon out of combat. Both press and release reach it; the secure gate runs
@@ -197,14 +223,14 @@ local function Arm()
     if InCombatLockdown() then return end
     if not ns.db.auto.enabled then
         -- switched off: no cast left for a press to fire at a stale target
-        armed.unit, armed.guid, armed.text, armed.key, armed.rankIdx = nil, nil, nil, nil, nil
+        armed.unit, armed.guid, armed.text, armed.key, armed.rankIdx, armed.spell = nil, nil, nil, nil, nil, nil
         SetBody(IDLE_BODY)
         return
     end
     local unit, need = Pick()
     local castText, rankIdx
     if unit then castText, rankIdx = CastText(need, unit, Plain(UnitGUID(unit))) end
-    armed.key, armed.rankIdx = need and need.key, rankIdx
+    armed.key, armed.rankIdx, armed.spell = need and need.key, rankIdx, need and need.spell
     -- kept within 255 bytes, as a macro: the bare name is dropped first when it does not fit
     local body
     for _, withBare in ipairs({ true, false }) do
@@ -213,14 +239,21 @@ local function Arm()
         if not body or #body <= 255 then break end
     end
     if not body or #body > 255 then unit = nil end
-    local guid = unit and Plain(UnitGUID(unit))
-    if guid ~= armed.guid or (unit and armed.text and not armed.text:find(castText, 1, true)) then
-        local s = stats or {}
-        if unit then
-            ns.Log("pick %s (%s) %s -> %s; players %s need %s far %s later %s unreadable %s",
-                unit, Plain(GetUnitName(unit, true)), guid, castText, s.players, s.need, s.far, s.skipped, s.unreadable)
-        else
-            ns.Log("pick nobody; players %s need %s far %s later %s unreadable %s", s.players, s.need, s.far, s.skipped, s.unreadable)
+    local guid = unit and ns.UnitKey(unit)
+    local s = stats or {}
+    if unit then
+        lastNobody = nil
+        if guid ~= armed.guid or (armed.text and not armed.text:find(castText, 1, true)) then
+            ns.Log("pick %s (%s) %s -> %s; players %s need %s far %s later %s unreadable %s; %s",
+                unit, Plain(GetUnitName(unit, true)), guid, castText, s.players, s.need, s.far, s.skipped, s.unreadable,
+                ns.Describe(unit))
+        end
+    else
+        local why = (s.why and #s.why > 0) and ("; group: " .. table.concat(s.why, ", ")) or ""
+        if why ~= lastNobody then
+            lastNobody = why
+            ns.Log("pick nobody; players %s need %s far %s later %s unreadable %s%s",
+                s.players, s.need, s.far, s.skipped, s.unreadable, why)
         end
     end
     armed.unit, armed.guid = unit, guid
@@ -231,7 +264,7 @@ ns.Arm = Arm
 
 button:SetScript("OnClick", function()
     if InCombatLockdown() then return end
-    lastGUID, lastPress = armed.guid, GetTime()
+    lastGUID, lastPress, lastText = armed.guid, GetTime(), armed.text
     ns.Log("PRESS %s / %s; target '%s'", armed.text, armed.guid, Plain(UnitName("target")))
     -- a press that sends no cast at all (and shows no error) means the macro's target was wrong:
     -- that player goes to the back of the queue. The global cooldown or a cast under way also send
@@ -306,7 +339,7 @@ ns.On("UNIT_SPELLCAST_SENT", function(_, _, target, castGUID, spellID)
     if armed.guid then
         local now = GetTime()
         for k, c in pairs(casts) do if now - c.t > 10 then casts[k] = nil end end
-        local rec = { guid = armed.guid, key = armed.key, rank = armed.rankIdx, text = armed.text, t = now }
+        local rec = { guid = armed.guid, key = armed.key, rank = armed.rankIdx, text = armed.text, spell = armed.spell, t = now }
         if castGUID then casts[castGUID] = rec end
         lastCast = rec
     end
@@ -324,9 +357,11 @@ ns.On("UNIT_SPELLCAST_SUCCEEDED", function(_, _, castGUID, spellID)
     castGUID = Plain(castGUID)
     local rec = castGUID and casts[castGUID]
     if castGUID then casts[castGUID] = nil end
-    if name and ns.blessingNames[name] and rec then
-        ns.RememberBlessing(rec.guid, name)
-        Arm()
+    if name and rec then
+        justCast[rec.guid] = { spell = name, t = GetTime() }
+        if ns.blessingNames[name] then ns.RememberBlessing(rec.guid, name) end
+        ns.RememberCast(rec.guid, name)
+        Arm() -- on to the next player at once, not on the one just buffed
         ns.RefreshAll()
     end
 end, "player")
@@ -337,11 +372,22 @@ ns.On("UI_ERROR_MESSAGE", function(_, _, message)
     C_Timer.After(0.05, function()
         local now = GetTime()
         local rec = (lastFailed and now - lastFailedT < 0.5 and lastFailed) or (lastCast and now - lastCast.t < 1.5 and lastCast)
+        -- refused before anything was sent ("out of range" from the client itself): the pressed player
+        if not rec and lastGUID and now - lastPress < 0.6 then rec = { guid = lastGUID, text = lastText } end
         if not rec then return end
         lastFailed, lastCast = nil, nil
         local lowLevel = type(message) == "string" and ((type(SPELL_FAILED_LOWLEVEL) == "string" and message == SPELL_FAILED_LOWLEVEL)
             or message:find("низкого уровня", 1, true) or message:lower():find("too low", 1, true))
-        if lowLevel and rec.key and rec.rank then
+        local stronger = type(message) == "string" and ((type(SPELL_FAILED_AURA_BOUNCED) == "string" and message == SPELL_FAILED_AURA_BOUNCED)
+            or message:find("более мощное", 1, true) or message:lower():find("more powerful", 1, true))
+        if stronger and rec.spell then
+            ns.Bounce(rec.guid, rec.spell)
+            ns.Log("  %s: someone else's stronger one is on them; not offered for 2 min", rec.text)
+        elseif lowLevel and rec.spell and not (rec.key and rec.rank and rec.rank > 1) then
+            -- no lower rank to try (Kings has a single one): another buff for them instead
+            ns.Bounce(rec.guid, rec.spell, 600)
+            ns.Log("  %s: too low level for any rank; not offered for 10 min", rec.text)
+        elseif lowLevel and rec.key and rec.rank then
             rankCap[rec.guid] = rankCap[rec.guid] or {}
             rankCap[rec.guid][rec.key] = math.max(1, rec.rank - 1)
             ns.Log("  too low level (%s): next time rank %d", rec.text, math.max(1, rec.rank - 1))
@@ -361,7 +407,8 @@ function ns.Status()
     for _, b in pairs(ns.blessings) do names[#names + 1] = b.spell end
     ns.Print(L["Your buffs: %s"]:format(#names > 0 and table.concat(names, ", ") or L["none known"]))
     if Plain(UnitExists("target")) then
-        ns.Print(L["Target: suitable %s"]:format(ns.Wanted("target", true) and L["yes"] or L["no"]))
+        local ok, why = ns.Wanted("target", true)
+        ns.Print(L["Target: suitable %s"]:format(ok and L["yes"] or (L["no"] .. (why and (" (" .. why .. ")") or ""))))
         local needs = ns.Needs("target")
         if not needs then ns.Print(L["Target's buffs can't be read"])
         elseif #needs == 0 then ns.Print(L["The target needs nothing"])

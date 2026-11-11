@@ -296,7 +296,7 @@ local function Build(panel)
         function() return db.buffs.size end, function(v) db.buffs.size = v end)
     y = Slider(c, y, L["Renew when less than this is left"], L["A buff with less than this share of its time left counts as missing."],
         0, 60, 5, "%", function() return db.buffs.renewPct end, function(v) db.buffs.renewPct = v end)
-    y = Check(c, y, L["Skip PvP-flagged players while you are not flagged"], L["Buffing them would flag you for PvP."],
+    y = Check(c, y, L["Skip PvP-flagged players while you are not flagged"], L["Buffing them would flag you for PvP. Your group is buffed anyway."],
         function() return db.buffs.skipPvP end, function(v) db.buffs.skipPvP = v end)
     y = Check(c, y, L["Intellect and Spirit only for mana users"], nil,
         function() return db.buffs.manaOnly end, function(v) db.buffs.manaOnly = v end)

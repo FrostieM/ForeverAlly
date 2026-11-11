@@ -24,13 +24,13 @@ function ns.Print(msg) print(ns.TAG .. msg) end
 local DEFAULTS = {
     allies = { enabled = true, size = 14, memory = true, blizzardList = true, tooltip = true },
     grouped = {},                 -- guid -> { name, last time seen in your group }
-    buffs = { enabled = true, size = 14, renewPct = 30, skipPvP = true, manaOnly = true, off = {},
+    buffs = { enabled = true, size = 14, renewPct = 30, skipPvP = false, manaOnly = true, off = {},
         optIn = {},                -- optional buffs switched on (they start off)
         thornsTanksOnly = true },
     blessings = {
         self = { "kings", "might", "wisdom", "salvation", "light", "sanctuary" }, -- on yourself
-        mana = { "wisdom", "kings", "salvation", "might", "light", "sanctuary" },
-        physical = { "might", "kings", "salvation", "light", "sanctuary", "wisdom" },
+        mana = { "kings", "wisdom", "salvation", "might", "light", "sanctuary" },
+        physical = { "kings", "might", "salvation", "light", "sanctuary", "wisdom" },
         noSalvationForRage = true,
     },
     auto = { enabled = true, self = true, group = true, others = true, ranks = true, message = true, skipSec = 8 },
@@ -62,10 +62,35 @@ local function OrderComplete(list, defaults)
     for _, k in ipairs(defaults) do if not seen[k] then list[#list + 1] = k end end
 end
 
+-- the default orders before Kings went first: a saved order still exactly like one of these was never
+-- changed by hand, so it moves to the new default
+local OLD_ORDERS = {
+    mana = { "wisdom", "kings", "salvation", "might", "light", "sanctuary" },
+    physical = { "might", "kings", "salvation", "light", "sanctuary", "wisdom" },
+}
+local function SameList(a, b)
+    if #a ~= #b then return false end
+    for i = 1, #a do if a[i] ~= b[i] then return false end end
+    return true
+end
+
 local function LoadDB()
     if type(ForeverAllyDB) ~= "table" then ForeverAllyDB = {} end
     local db = ForeverAllyDB
     Fill(db, DEFAULTS)
+    if not db.kingsFirst then
+        for role, old in pairs(OLD_ORDERS) do
+            if type(db.blessings[role]) == "table" and SameList(db.blessings[role], old) then
+                db.blessings[role] = { unpack(DEFAULTS.blessings[role]) }
+            end
+        end
+        db.kingsFirst = true
+    end
+    -- "Skip PvP-flagged players" was on by default before: switched off once (the new default)
+    if not db.pvpSkipDefaultOff then
+        db.buffs.skipPvP = false
+        db.pvpSkipDefaultOff = true
+    end
     OrderComplete(db.blessings.self, DEFAULTS.blessings.self)
     OrderComplete(db.blessings.mana, DEFAULTS.blessings.mana)
     OrderComplete(db.blessings.physical, DEFAULTS.blessings.physical)
@@ -84,7 +109,7 @@ end
 -- Log (off unless switched on: /fally log on, or the options)
 --------------------------------------------------------------------------------
 
-local LOG_MAX = 400
+local LOG_MAX = 2000
 function ns.Log(fmt, ...)
     local db = ns.db
     if not (db and db.debug) then return end
