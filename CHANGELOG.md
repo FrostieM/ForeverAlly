@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.3
+
+- Auto buff in combat. The game does not let an addon change the key in combat, so until now the key did nothing in a fight. Now, when a fight starts, you and your group members who lack a buff are put in a queue, and each press in the fight buffs the next one. A press that fails (global cooldown, out of range) still moves the queue on, so press steadily. Players around you outside your group are not buffed in combat. Option: `/fally` > Auto buff > In combat: a queue for you and your group (on by default).
+- Battlegrounds: a group member who died while you were still fighting is now buffed again after your fight. Before, the death was not noticed in combat, and the addon went on counting its earlier casts on them as still running.
+
 ## 1.0.2
 
 - Auto buff: after a buff lands, the next press goes to the next player at once. Before, the aura reached the player a moment after the cast, so they still looked unbuffed and the next press cast the same buff on them again ("Spell is not ready yet", or a wasted cast after the global cooldown).

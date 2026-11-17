@@ -6,6 +6,11 @@
 --    secure button (Key Bindings > AddOns > ForeverAlly, or the options) whose macro text the addon
 --    rewrites out of combat, a few times a second, only when the pick changes. Before a fight it is
 --    emptied (secure attributes can't change in combat). No macro of the player's is used.
+--  * In combat the addon may not change the button. When a fight starts it lines up you and your
+--    group members who lack a buff (one entry per buff) and hands the list to a secure handler on
+--    the button: each press in the fight takes the next entry, a press that fails included (the
+--    secure code can't see auras or whether the cast went off). Players around you are not in it:
+--    reaching them needs a change of target by name, made fresh for each press.
 --  * Group members are cast on by unit ([@party1]). Anyone else: [@nameplateN] did nothing, so the
 --    player is targeted by name and the previous target restored. /targetexact finds a Forever
 --    player only by the full "Name Surname"; the bare name may hit an NPC of that name.
@@ -219,6 +224,88 @@ local function CastLines(unit, spell, withBare)
     return table.concat(lines, "\n")
 end
 
+--------------------------------------------------------------------------------
+-- In combat: a queue made when the fight starts
+--------------------------------------------------------------------------------
+
+local QUEUE_MAX = 40
+local combatQueue = {} -- index -> { body, guid, key, rank, spell, text }
+local queueHeader = CreateFrame("Frame", "FAllyQueue", UIParent, "SecureHandlerBaseTemplate")
+queueHeader:SetAttribute("qn", 0)
+queueHeader:SetAttribute("qi", 0)
+-- Runs in the secure environment before the button's own click. The action runs on the key's
+-- release (useOnKeyDown false: both clicks reach the button), so the queue moves on that one only.
+-- Out of combat it does nothing: the addon sets the text itself then.
+if SecureHandlerWrapScript then
+    SecureHandlerWrapScript(castButton, "OnClick", queueHeader, [[
+        if down or not PlayerInCombat() then return end
+        local i = (owner:GetAttribute("qi") or 0) + 1
+        local text = "/click FAllyPress"
+        if i <= (owner:GetAttribute("qn") or 0) then
+            owner:SetAttribute("qi", i)
+            text = owner:GetAttribute("q" .. i) or text
+        else
+            owner:SetAttribute("qi", i)
+        end
+        self:SetAttribute("macrotext", text)
+        self:SetAttribute("macrotext1", text)
+    ]])
+end
+
+-- (PLAYER_REGEN_DISABLED: the last moment secure attributes can still be set)
+local function BuildQueue()
+    wipe(combatQueue)
+    local a = ns.db.auto
+    if a.enabled and a.combat and ns.HasBuffs() then
+        local units, seen, now = {}, {}, GetTime()
+        if a.self then units[#units + 1] = "player" end
+        if a.group then
+            if IsInRaid() then for i = 1, 40 do units[#units + 1] = "raid" .. i end
+            else for i = 1, 4 do units[#units + 1] = "party" .. i end end
+        end
+        for _, unit in ipairs(units) do
+            local exists = UnitExists(unit)
+            local me = unit ~= "player" and Plain(UnitIsUnit(unit, "player"))
+            if not me and (Plain(exists) or (ns.GroupToken(unit) and ns.Secret(exists))) then
+                local key = ns.UnitKey(unit)
+                if key and not seen[key] and ns.Wanted(unit, true) then
+                    seen[key] = true
+                    local jc = justCast[key]
+                    for _, need in ipairs(ns.Needs(unit) or {}) do
+                        if #combatQueue < QUEUE_MAX and not (jc and now - jc.t < JUST_CAST_SEC and jc.spell == need.spell) then
+                            local castText, rankIdx = CastText(need, unit, key)
+                            local lines = CastLines(unit, castText, false)
+                            local body = lines and (lines .. "\n/click FAllyPress")
+                            if body and #body <= 255 then
+                                combatQueue[#combatQueue + 1] = { body = body, guid = key, key = need.key, rank = rankIdx,
+                                    spell = need.spell, text = (Plain(UnitName(unit)) or "?") .. ": " .. castText }
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    local old = queueHeader:GetAttribute("qn") or 0
+    for i = #combatQueue + 1, old do queueHeader:SetAttribute("q" .. i, nil) end
+    for i, q in ipairs(combatQueue) do queueHeader:SetAttribute("q" .. i, q.body) end
+    queueHeader:SetAttribute("qn", #combatQueue)
+    queueHeader:SetAttribute("qi", 0)
+    if #combatQueue > 0 then
+        local list = {}
+        for i, q in ipairs(combatQueue) do list[i] = q.text end
+        ns.Log("combat queue %d: %s", #combatQueue, table.concat(list, ", "))
+    elseif a.enabled and a.combat then
+        ns.Log("combat queue: empty")
+    end
+end
+
+-- the queue entry the last press in combat took (nil out of combat)
+local function QueueEntry()
+    if not InCombatLockdown() then return end
+    return combatQueue[queueHeader:GetAttribute("qi") or 0]
+end
+
 local function Arm()
     if InCombatLockdown() then return end
     if not ns.db.auto.enabled then
@@ -263,7 +350,15 @@ end
 ns.Arm = Arm
 
 button:SetScript("OnClick", function()
-    if InCombatLockdown() then return end
+    if InCombatLockdown() then
+        local i = queueHeader:GetAttribute("qi") or 0
+        local q = combatQueue[i]
+        lastPress = GetTime()
+        if q then lastGUID, lastText = q.guid, q.text end
+        ns.Log("PRESS in combat %d/%d: %s", i, #combatQueue, q and q.text or "queue done")
+        if ns.db.auto.message and q then UIErrorsFrame:AddMessage(q.text, 1, 0.82, 0) end
+        return
+    end
     lastGUID, lastPress, lastText = armed.guid, GetTime(), armed.text
     ns.Log("PRESS %s / %s; target '%s'", armed.text, armed.guid, Plain(UnitName("target")))
     -- a press that sends no cast at all (and shows no error) means the macro's target was wrong:
@@ -308,13 +403,32 @@ function ns.SetBuffKey(key)
     return true
 end
 
+-- In combat Arm does not run, so a death in your group is noticed here instead: someone who died
+-- (and maybe was revived) during your fight has lost their buffs, and blind mode (battlegrounds) must
+-- not go on counting your earlier casts on them, or they would not be buffed again after the fight.
+local function NoteDeaths()
+    local raid = IsInRaid()
+    local prefix = raid and "raid" or "party"
+    for i = 1, raid and 40 or 4 do -- (as the rest of this file: counts may be hidden in battlegrounds)
+        local unit = prefix .. i
+        if Plain(UnitIsDeadOrGhost(unit)) then
+            local key = ns.UnitKey(unit)
+            if key and (ns.casts[key] or ns.myBlessings[key]) then
+                ns.ForgetCasts(key)
+                ns.Log("  %s %s died during the fight: your casts on them forgotten", unit, Plain((UnitName(unit))) or "?")
+            end
+        end
+    end
+end
+
 local wait = 0
 local ticker = CreateFrame("Frame")
 ticker:SetScript("OnUpdate", function(_, elapsed)
     wait = wait - elapsed
     if wait > 0 then return end
     wait = 0.3
-    if ns.db and ns.HasBuffs() then Arm() end -- (Arm empties the action when the option is off)
+    if not (ns.db and ns.HasBuffs()) then return end
+    if InCombatLockdown() then NoteDeaths() else Arm() end -- (Arm empties the action when the option is off)
 end)
 
 ns.On("PLAYER_LOGIN", function()
@@ -331,15 +445,24 @@ end)
 ns.On("PLAYER_REGEN_DISABLED", function()
     armed.unit, armed.guid, armed.text = nil, nil, nil
     SetBody(IDLE_BODY) -- a target picked before the fight must not be cast on during it
+    BuildQueue()
+end)
+ns.On("PLAYER_REGEN_ENABLED", function()
+    -- the secure handler rewrote the text during the fight: set it afresh
+    armed.body = nil
+    Arm()
 end)
 ns.On("UNIT_SPELLCAST_SENT", function(_, _, target, castGUID, spellID)
     sentSincePress = true
     if GetTime() - lastPress < 2 then ns.Log("  cast sent: %s at '%s'", Plain(spellID) and C_Spell.GetSpellName(Plain(spellID)), Plain(target)) end
     castGUID = Plain(castGUID)
-    if armed.guid then
+    local q = QueueEntry()
+    if q and (GetTime() - lastPress > 0.5 or (Plain(spellID) and C_Spell.GetSpellName(Plain(spellID))) ~= q.spell) then q = nil end
+    if armed.guid or q then
         local now = GetTime()
         for k, c in pairs(casts) do if now - c.t > 10 then casts[k] = nil end end
-        local rec = { guid = armed.guid, key = armed.key, rank = armed.rankIdx, text = armed.text, spell = armed.spell, t = now }
+        local rec = q and { guid = q.guid, key = q.key, rank = q.rank, text = q.text, spell = q.spell, t = now }
+            or { guid = armed.guid, key = armed.key, rank = armed.rankIdx, text = armed.text, spell = armed.spell, t = now }
         if castGUID then casts[castGUID] = rec end
         lastCast = rec
     end
@@ -421,4 +544,7 @@ function ns.Status()
     local key = ns.GetBuffKey()
     ns.Print(L["Auto-buff key: %s"]:format(key and (GetBindingText and GetBindingText(key) or key) or L["Not set"]))
     ns.Print(L["Next press: %s"]:format(((armed.body or IDLE_BODY):gsub("\n", " || "))))
+    if InCombatLockdown() then
+        ns.Print(("combat queue: %d / %d"):format(queueHeader:GetAttribute("qi") or 0, #combatQueue))
+    end
 end

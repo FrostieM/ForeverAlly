@@ -33,7 +33,8 @@ local DEFAULTS = {
         physical = { "kings", "might", "salvation", "light", "sanctuary", "wisdom" },
         noSalvationForRage = true,
     },
-    auto = { enabled = true, self = true, group = true, others = true, ranks = true, message = true, skipSec = 8 },
+    auto = { enabled = true, self = true, group = true, others = true, ranks = true, message = true, skipSec = 8,
+        combat = true },          -- in combat: the queue made when the fight starts (AutoBuff.lua)
     debug = false,
     log = {},
 }

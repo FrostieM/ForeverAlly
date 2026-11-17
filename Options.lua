@@ -359,6 +359,8 @@ local function Build(panel)
     y = Check(c, y, L["Pick the rank by the target's level"], L["Forever does not lower a buff's rank for a low-level player by itself."],
         function() return db.auto.ranks end, function(v) db.auto.ranks = v end, 20)
     y = Check(c, y, L["Message on each press"], nil, function() return db.auto.message end, function(v) db.auto.message = v end, 20)
+    y = Check(c, y, L["In combat: a queue for you and your group"], L["In combat the game does not let the addon change the key. When a fight starts, the addon lines up you and your group members who lack a buff; each press in the fight buffs the next one. A press that fails (cooldown, out of range) still moves the queue on, so press steadily."],
+        function() return db.auto.combat end, function(v) db.auto.combat = v end, 20)
     y = Slider(c, y, L["After a failed cast, try others first for"], nil, 0, 30, 1, L["sec"],
         function() return db.auto.skipSec end, function(v) db.auto.skipSec = v end)
 
