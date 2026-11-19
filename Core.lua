@@ -238,6 +238,6 @@ SlashCmdList.FOREVERALLY = function(msg)
     elseif cmd == "status" then
         if ns.Status then ns.Status() end
     else
-        ns.Print(L["Commands: /fally - options, /fally status - about your target, /fally log on|off|show|clear, /ally add|del"])
+        ns.Print(L["Commands: /fally - options, /fally status - about your target, /fally log on|off|show|clear, /ally add|note|edit|del"])
     end
 end

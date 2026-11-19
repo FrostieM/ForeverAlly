@@ -367,7 +367,7 @@ local function Build(panel)
     y = Header(c, y, L["Troubleshooting"])
     y = Check(c, y, L["Keep a log"], L["Written to the SavedVariables file on /reload or logout; /fally log show prints the last lines."],
         function() return db.debug end, function(v) db.debug = v end)
-    y = Note(c, y, L["Commands: /fally - options, /fally status - about your target, /fally log on|off|show|clear, /ally add|del"])
+    y = Note(c, y, L["Commands: /fally - options, /fally status - about your target, /fally log on|off|show|clear, /ally add|note|edit|del"])
 
     c:SetHeight(-y + 20)
     panel:SetScript("OnShow", function()

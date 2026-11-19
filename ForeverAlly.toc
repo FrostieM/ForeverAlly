@@ -1,9 +1,9 @@
 ## Interface: 16001
 ## Title: |cff7fd4ffForever|rAlly
-## Notes: Marks players you grouped with and shows which of your class buffs each nearby player lacks, on their nameplates; one key buffs them one by one (self, group, then everyone around).
-## Notes-ruRU: Отмечает игроков, с которыми ты был в группе, и показывает на их табличках, каких твоих баффов не хватает; одна клавиша баффает всех по очереди (себя, группу, потом всех вокруг).
+## Notes: Marks players you grouped with (or added by right-click, with a note and an icon of your choice) and shows which of your class buffs each nearby player lacks, on their nameplates; one key buffs them one by one (self, group, then everyone around).
+## Notes-ruRU: Отмечает игроков, с которыми ты был в группе (или добавил правым кликом, с описанием и своей иконкой), и показывает на их табличках, каких твоих баффов не хватает; одна клавиша баффает всех по очереди (себя, группу, потом всех вокруг).
 ## Author: Osino
-## Version: 1.0.3
+## Version: 1.1.0
 ## Category: Buffs
 ## IconTexture: Interface\Icons\Spell_Holy_GreaterBlessingofKings
 ## SavedVariables: ForeverAllyDB

@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.0
+
+- Add anyone as an ally by hand: right-click their unit frame (target, party, raid, focus) or their name in chat > ForeverAlly > "Add to allies...". A small window takes an optional note and an icon to show instead of the default one: raid markers, tank / healer / damage, trader, helper, "bad", professions. The icon shows on their nameplate and in their tooltip. The note shows in the tooltip, in quotes, in the yellow of the ally line, indented under it, and a long note wraps at a fixed width. On an ally the menu has "Ally note and icon..." and "Remove from allies". The entries reach Blizzard's menus through Menu.ModifyMenu only, so the menu's own items stay secure.
+- Someone you added by hand and never grouped with is shown as "Added to your allies", not "Grouped with you before". Grouping with them later switches it; the note and the icon stay.
+- The ally line in the tooltip has a grey date on the right: the last time you were in a group together, or the day you added them. Date format and quotes follow your client's language.
+- New commands for your target: /ally add [note], /ally note <text> (empty clears it), /ally edit (the window). /ally del as before.
+- "Clear the remembered allies" keeps the players you added by hand or gave a note or an icon.
+
 ## 1.0.3
 
 - Auto buff in combat. The game does not let an addon change the key in combat, so until now the key did nothing in a fight. Now, when a fight starts, you and your group members who lack a buff are put in a queue, and each press in the fight buffs the next one. A press that fails (global cooldown, out of range) still moves the queue on, so press steadily. Players around you outside your group are not buffed in combat. Option: `/fally` > Auto buff > In combat: a queue for you and your group (on by default).
