@@ -2,7 +2,7 @@
 
 ## 1.2.0
 
-- Chat: a player you marked yourself (added by hand, or gave a note or an icon) gets their icon in chat: say, yell, whisper, party, raid, instance, guild, officer and channels. With Blizzard's chat it goes at the start of their message; with Chattynator in front of their name, through Chattynator's message modifier API (matched by name, since Chattynator passes no GUID to modifiers). It goes through Blizzard's chat filter, so nothing of the chat code is replaced; a message the client hides from addons is left alone. Option: `/fally` > Recent allies > Icon in chat (on by default).
+- Chat: a player you marked yourself (added by hand, or gave a note or an icon) gets their icon in chat: say, yell, whisper, party, raid, instance, guild, officer and channels. With Chattynator it goes in front of their name, through Chattynator's message modifier API (matched by name, since Chattynator passes no GUID to modifiers). With the game's own chat it goes at the start of their message, through Blizzard's chat filter, so nothing of the chat code is replaced. A message the client hides from addons is left alone. Option: `/fally` > Recent allies > Icon in chat (on by default).
 
 ## 1.1.0
 
