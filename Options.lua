@@ -280,6 +280,8 @@ local function Build(panel)
         function() return db.allies.blizzardList end, function(v) db.allies.blizzardList = v end, 20)
     y = Check(c, y, L["Line in the tooltip"], nil,
         function() return db.allies.tooltip end, function(v) db.allies.tooltip = v end, 20)
+    y = Check(c, y, L["Icon in chat"], L["The icon of a player you added yourself (or gave a note or an icon) at the start of their messages in chat."],
+        function() return db.allies.chat end, function(v) db.allies.chat = v end, 20)
     y = Slider(c, y, L["Ally icon size"], nil, 10, 28, 1, L["px"],
         function() return db.allies.size end, function(v) db.allies.size = v end)
     local clear = Button(c, y, L["Clear the remembered allies"], function() ns.ClearAllies(); for _, fn in ipairs(refreshers) do fn() end end)

@@ -22,7 +22,8 @@ function ns.Print(msg) print(ns.TAG .. msg) end
 --------------------------------------------------------------------------------
 
 local DEFAULTS = {
-    allies = { enabled = true, size = 14, memory = true, blizzardList = true, tooltip = true },
+    allies = { enabled = true, size = 14, memory = true, blizzardList = true, tooltip = true,
+        chat = true },             -- chat: the icon of players you marked yourself in their messages
     grouped = {},                 -- guid -> { name, last time seen in your group }
     buffs = { enabled = true, size = 14, renewPct = 30, skipPvP = false, manaOnly = true, off = {},
         optIn = {},                -- optional buffs switched on (they start off)

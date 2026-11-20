@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.0
+
+- Chat: a player you marked yourself (added by hand, or gave a note or an icon) gets their icon in chat: say, yell, whisper, party, raid, instance, guild, officer and channels. With Blizzard's chat it goes at the start of their message; with Chattynator in front of their name, through Chattynator's message modifier API (matched by name, since Chattynator passes no GUID to modifiers). It goes through Blizzard's chat filter, so nothing of the chat code is replaced; a message the client hides from addons is left alone. Option: `/fally` > Recent allies > Icon in chat (on by default).
+
 ## 1.1.0
 
 - Add anyone as an ally by hand: right-click their unit frame (target, party, raid, focus) or their name in chat > ForeverAlly > "Add to allies...". A small window takes an optional note and an icon to show instead of the default one: raid markers, tank / healer / damage, trader, helper, "bad", professions. The icon shows on their nameplate and in their tooltip. The note shows in the tooltip, in quotes, in the yellow of the ally line, indented under it, and a long note wraps at a fixed width. On an ally the menu has "Ally note and icon..." and "Remove from allies". The entries reach Blizzard's menus through Menu.ModifyMenu only, so the menu's own items stay secure.

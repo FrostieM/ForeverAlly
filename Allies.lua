@@ -10,7 +10,7 @@
 --
 -- A memory record: ns.db.grouped[guid] = { name, last time seen in your group (or added),
 --   note = text or nil, icon = key in ICONS or nil (the default), manual = true while added by
---   hand and not yet seen in your group }
+--   hand and not yet seen in your group, marked = true once added or edited by hand (stays) }
 local _, ns = ...
 local L, Plain = ns.L, ns.Plain
 
@@ -61,7 +61,8 @@ local function ApplyIcon(tex, def)
 end
 
 local function IconMarkup(def, size)
-    if def.atlas then return CreateAtlasMarkup(def.atlas, size, size) end
+    -- (size 0: the height of the text; an atlas has no such mode and gets 13 px, about chat text)
+    if def.atlas then return CreateAtlasMarkup(def.atlas, size > 0 and size or 13, size > 0 and size or 13) end
     if def.crop then return ("|T%s:%d:%d:0:0:64:64:5:59:5:59|t"):format(def.file, size, size) end
     return ("|T%s:%d:%d|t"):format(def.file, size, size)
 end
@@ -219,11 +220,12 @@ local function SaveAlly(guid, name, note, icon)
     local grouped = ns.db.grouped
     local rec = grouped[guid]
     if not rec then
-        rec = { name or "?", time(), manual = true }
+        rec = { name or "?", time(), manual = true, marked = true }
         grouped[guid] = rec
     elseif name and name ~= "?" then
         rec[1] = name
     end
+    rec.marked = true
     if note ~= nil then
         note = strtrim(note)
         rec.note = note ~= "" and note or nil
@@ -420,13 +422,112 @@ ns.AfterLoad(function()
 end)
 
 --------------------------------------------------------------------------------
+-- Chat: the icon of a player you marked yourself (added by hand, or given a note or an icon).
+-- With Chattynator it goes in front of their name ("<icon>[Name]: text", through Chattynator's own
+-- message modifier API); with Blizzard's chat at the start of their message ("[Name]: <icon> text"):
+-- moving it in front of the name there would mean replacing Blizzard's chat code.
+--------------------------------------------------------------------------------
+
+-- (Blizzard's chat filter API: the line goes through unchanged unless the addon returns new text.
+-- Nothing of the game's chat code is replaced, so chat links and whispers stay secure. A message or
+-- a GUID the client hides from addons, as in some instances, is left alone.)
+local CHAT_EVENTS = {
+    "CHAT_MSG_SAY", "CHAT_MSG_YELL", "CHAT_MSG_WHISPER", "CHAT_MSG_PARTY", "CHAT_MSG_PARTY_LEADER",
+    "CHAT_MSG_RAID", "CHAT_MSG_RAID_LEADER", "CHAT_MSG_RAID_WARNING", "CHAT_MSG_INSTANCE_CHAT",
+    "CHAT_MSG_INSTANCE_CHAT_LEADER", "CHAT_MSG_GUILD", "CHAT_MSG_OFFICER", "CHAT_MSG_CHANNEL",
+}
+
+local function Readable(v)
+    if v == nil then return false end
+    if canaccessvalue then return canaccessvalue(v) end
+    return not (issecretvalue and issecretvalue(v))
+end
+
+local function Marked(rec)
+    return type(rec) == "table" and (rec.marked or rec.manual or rec.note or rec.icon) and true or false
+end
+
+local function ChatOn()
+    local a = ns.db and ns.db.allies
+    return a and a.enabled and a.chat and a.memory
+end
+
+local chattynator = false -- true once the icon goes through Chattynator instead
+
+local function ChatIcon(chatFrame, event, msg, ...)
+    if chattynator or not ChatOn() then return false end
+    if type(msg) ~= "string" or not Readable(msg) then return false end
+    local guid = select(11, ...) -- (after the author, language, channel, target, flags, zone, index, base name, language ID, line ID)
+    if type(guid) ~= "string" or not Readable(guid) then return false end
+    local rec = ns.db.grouped[guid]
+    if not Marked(rec) then return false end
+    local size = 0
+    if chatFrame and chatFrame.GetFont then
+        local _, h = chatFrame:GetFont()
+        if type(h) == "number" and h > 0 then size = math.floor(h + 0.5) end
+    end
+    if size == 0 then size = 14 end
+    return false, IconMarkup(IconDef(rec), size) .. " " .. msg, ...
+end
+
+-- Chattynator gives its modifiers the sender's name, not the GUID: marked players are looked up by
+-- name ("Name Surname", without the realm), from an index rebuilt after any change to the allies
+local byName, namesDirty = {}, true
+local function NameKey(name)
+    if type(name) ~= "string" or not Readable(name) or name == "" then return end
+    return (name:match("^(.-)%-") or name):lower()
+end
+local function MarkedByName(name)
+    if namesDirty then
+        byName = {}
+        for _, rec in pairs(ns.db.grouped) do
+            local key = Marked(rec) and NameKey(rec[1])
+            if key then byName[key] = rec end
+        end
+        namesDirty = false
+    end
+    local key = NameKey(name)
+    return key and byName[key]
+end
+local refreshAll = ns.RefreshAll
+ns.RefreshAll = function(...) -- (every change to the allies ends in a refresh)
+    namesDirty = true
+    return refreshAll(...)
+end
+
+local CHATTY_PLAYER_LINK = "|Hplayer:"
+local function ChattyIcon(data)
+    if not ChatOn() then return end
+    local player = data and data.typeInfo and data.typeInfo.player
+    if type(player) ~= "table" or type(data.text) ~= "string" or not Readable(data.text) then return end
+    local rec = MarkedByName(player.name)
+    if not rec then return end
+    local at = data.text:find(CHATTY_PLAYER_LINK, 1, true)
+    if not at then return end
+    data.text = data.text:sub(1, at - 1) .. IconMarkup(IconDef(rec), 0) .. " " .. data.text:sub(at)
+end
+
+ns.AfterLoad(function()
+    local add = (ChatFrameUtil and ChatFrameUtil.AddMessageEventFilter) or ChatFrame_AddMessageEventFilter
+    if add then
+        for _, event in ipairs(CHAT_EVENTS) do pcall(add, event, ChatIcon) end
+    end
+    local function Hook()
+        local api = not chattynator and Chattynator and Chattynator.API
+        if type(api) == "table" and api.AddModifier and pcall(api.AddModifier, ChattyIcon) then chattynator = true end
+    end
+    Hook()
+    ns.On("PLAYER_LOGIN", Hook) -- (in case Chattynator loads after this addon)
+end)
+
+--------------------------------------------------------------------------------
 -- Clearing, counting, slash commands
 --------------------------------------------------------------------------------
 
 -- (players you added by hand or gave a note or an icon are kept: remove them one by one)
 function ns.ClearAllies()
     for guid, rec in pairs(ns.db.grouped) do
-        if not (type(rec) == "table" and (rec.note or rec.icon or rec.manual)) then ns.db.grouped[guid] = nil end
+        if not (type(rec) == "table" and (rec.note or rec.icon or rec.manual or rec.marked)) then ns.db.grouped[guid] = nil end
     end
     ns.RefreshAll()
 end

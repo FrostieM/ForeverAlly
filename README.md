@@ -18,7 +18,7 @@ You run through a busy town, and half the people around you could use your buff.
 
 ## Recent allies
 
-Anyone you've been in a group with gets a small icon by their name and a line in their tooltip: "Grouped with you before". The game's own Recent Allies list misses some people (friends, for example), so ForeverAlly keeps its own memory. You can also add anyone by hand: right-click their unit frame or their name in chat > **Add to allies...**, write an optional note and pick an icon to use instead of the default one (raid markers, roles, trader, professions...). The note shows in their tooltip, the icon on their nameplate and in the tooltip. For your target: `/ally add [note]`, `/ally note <text>`, `/ally edit`, `/ally del`.
+Anyone you've been in a group with gets a small icon by their name and a line in their tooltip: "Grouped with you before". The game's own Recent Allies list misses some people (friends, for example), so ForeverAlly keeps its own memory. You can also add anyone by hand: right-click their unit frame or their name in chat > **Add to allies...**, write an optional note and pick an icon to use instead of the default one (raid markers, roles, trader, professions...). The note shows in their tooltip, the icon on their nameplate and in the tooltip. A player you marked yourself also gets their icon in chat: in front of their name with Chattynator, at the start of their message in the game's own chat. For your target: `/ally add [note]`, `/ally note <text>`, `/ally edit`, `/ally del`.
 
 ## Missing buffs
 
