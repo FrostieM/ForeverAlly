@@ -7,6 +7,10 @@ You run through a busy town, and half the people around you could use your buff.
 **ForeverAlly** answers both, right on the nameplates of the players around you. It is built and tested for **WoW: Forever**.
 
 <p align="center">
+  <img src="media/campfire.jpg" width="640" alt="Recent allies around a campfire in the capital: the small yellow icons before the names">
+</p>
+
+<p align="center">
   <img src="media/ally-and-buff.jpg" height="300" alt="Recent ally icon before the name, missing buff after it">
   <img src="media/blessing.jpg" height="300" alt="The blessing this player still needs">
   <img src="media/missing-buff.jpg" height="300" alt="A missing buff on a nearby player">
